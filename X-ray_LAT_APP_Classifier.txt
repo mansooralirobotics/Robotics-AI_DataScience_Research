@@ -1,0 +1,53 @@
+outputfolder=fullfile('APANDLATSLAVE');
+rootfolder=fullfile(outputfolder,'APANDLAT');
+catagories={'AP','LAT'};
+imds=imageDatastore(fullfile(rootfolder,catagories),'LabelSource','foldernames');
+tb1=countEachLabel(imds);
+minsetcount=min(tb1{:,2});
+imds=splitEachLabel(imds,minsetcount,'randomized');
+countEachLabel(imds);
+AP=find(imds.Labels=='AP',1);
+LAT=find(imds.Labels=='LAT',1);
+figure
+subplot(2,2,1);
+imshow(readimage(imds,AP));
+subplot(2,2,2);
+imshow(readimage(imds,LAT));
+net=resnet50();
+figure
+plot(net)
+title('Architecture of resnet-50')
+set(gca,'YLim',[150 170]);
+net.Layers(1);
+net.Layers(end);
+[trainingset,testset]=splitEachLabel(imds,0.7,'randomized');
+imagesize=net.Layers(1).InputSize;
+augmentedtrainingset=augmentedImageDatastore(imagesize,trainingset);
+augmentedtestset=augmentedImageDatastore(imagesize,testset);
+w1=net.Layers(2).Weights;
+w1=mat2gray(w1);
+figure
+montage(w1);
+title('First convolutional Layer Weight');
+featureLayer='fc1000';
+trainingfeatures=activations(net,augmentedtrainingset,featureLayer,...
+    "MiniBatchSize",32,"OutputAs","columns");
+trainingLabels=trainingset.Labels;
+classifier=fitcecoc(trainingfeatures,trainingLabels,"Learners","linear","Coding","onevsall",...
+    'ObservationsIn','columns');
+testfeatures=activations(net,augmentedtestset,featureLayer,...
+    "MiniBatchSize",32,"OutputAs","columns");
+predictLabels=predict(classifier,testfeatures,'observationsIn','columns');
+testLabels=testset.Labels;
+confMat=confusionmat(testLabels,predictLabels);
+confMat=bsxfun(@rdivide,confMat,sum(confMat,2));
+mean(diag(confMat));
+
+%Testing
+newImage=imread(fullfile('A1-Lat-2.tif'));
+ds=augmentedImageDatastore(imagesize,newImage);
+imagefeatures=activations(net,ds,featureLayer,...
+    "MiniBatchSize",32,"OutputAs","columns");
+label=predict(classifier,imagefeatures,'observationsIn','columns');
+a=sprintf('The Loaded image belongs to %s class',label);
+figure,imshow(newImage),title(a);
